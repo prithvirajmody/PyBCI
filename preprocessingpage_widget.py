@@ -1,9 +1,8 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QCheckBox, QComboBox, QScrollArea, QGroupBox, QListWidget,
-    QListWidgetItem
+    QListWidgetItem, QRadioButton, QButtonGroup
 )
-
 from PyQt5.QtCore import Qt, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 from matplotlib.figure import Figure
@@ -23,6 +22,37 @@ class PreprocessingPageWidget(QWidget):
         # Filtering section
         filter_group = QGroupBox("Filtering Options")
         filter_layout = QVBoxLayout()
+
+        # Offering the mainly used types of filters
+        self.signal_filter_label = QLabel("Select specific filtering method:")
+        filter_layout.addWidget(self.signal_filter_label)
+
+        self.filter_button_group = QButtonGroup()
+        self.butterworth_option = QRadioButton("Butterworth")
+        self.chebyshev_one_option = QRadioButton("Chebyshev I")
+        self.chebyshev_two_option = QRadioButton("Chebyshev II")
+        self.bessel_option = QRadioButton("Bessel")
+        self.fir_option = QRadioButton("Finite Impulse Response")
+        self.none_option = QRadioButton("None")
+
+        self.filter_button_group.addButton(self.butterworth_option)
+        self.filter_button_group.addButton(self.chebyshev_one_option)
+        self.filter_button_group.addButton(self.chebyshev_two_option)
+        self.filter_button_group.addButton(self.bessel_option)
+        self.filter_button_group.addButton(self.fir_option)
+        self.filter_button_group.addButton(self.none_option)
+
+        self.specific_filter_layout = QHBoxLayout()
+
+        self.specific_filter_layout.addWidget(self.butterworth_option)
+        self.specific_filter_layout.addWidget(self.chebyshev_one_option)
+        self.specific_filter_layout.addWidget(self.chebyshev_two_option)
+        self.specific_filter_layout.addWidget(self.bessel_option)
+        self.specific_filter_layout.addWidget(self.fir_option)
+        self.specific_filter_layout.addWidget(self.none_option)
+
+        filter_layout.addLayout(self.specific_filter_layout)
+
         filter_label = QLabel("Select filters to apply:")
         filter_layout.addWidget(filter_label)
 
@@ -34,6 +64,15 @@ class PreprocessingPageWidget(QWidget):
         highpass_hbox.addWidget(QLabel("Cutoff (Hz):"))
         highpass_hbox.addWidget(self.highpass_input)
         filter_layout.addLayout(highpass_hbox)
+
+        # Low-pass filter
+        self.lowpass_cb = QCheckBox("Enable Low-pass Filter")
+        self.lowpass_input = QLineEdit("0.1")
+        lowpass_hbox = QHBoxLayout()
+        lowpass_hbox.addWidget(self.lowpass_cb)
+        lowpass_hbox.addWidget(QLabel("Cutoff (Hz):"))
+        lowpass_hbox.addWidget(self.lowpass_input)
+        filter_layout.addLayout(lowpass_hbox)
 
         # Band-pass filter
         self.bandpass_cb = QCheckBox("Enable Band-pass Filter")
@@ -56,6 +95,15 @@ class PreprocessingPageWidget(QWidget):
         notch_hbox.addWidget(QLabel("Frequency:"))
         notch_hbox.addWidget(self.notch_freq)
         filter_layout.addLayout(notch_hbox)
+
+        # Adjust Roll-off for filters
+        self.roll_off = QCheckBox("Manually set roll-off/slope (db/octave)")
+        self.roll_off_input = QLineEdit("20")
+        rolloff_hbox = QHBoxLayout()
+        rolloff_hbox.addWidget(self.roll_off)
+        rolloff_hbox.addWidget(QLabel("Slope (db/octave):"))
+        rolloff_hbox.addWidget(self.roll_off_input)
+        filter_layout.addLayout(rolloff_hbox)
 
         apply_filter_button = QPushButton("Add Filters to Pipeline")
         apply_filter_button.clicked.connect(self.apply_filters)
@@ -130,19 +178,20 @@ class PreprocessingPageWidget(QWidget):
         self.status_label = QLabel("No preprocessing applied")
         scroll_layout.addWidget(self.status_label)
 
-        # Selected Transformations section (as per your comment)
+        # Selected Transformations section
         transform_group = QGroupBox("Preprocessing Pipeline")
         transform_layout = QVBoxLayout()
         transform_label = QLabel("Selected Transformations (drag to reorder):")
         transform_layout.addWidget(transform_label)
+
+        # List Options
         self.transform_list = QListWidget()
         self.transform_list.setDragDropMode(QListWidget.InternalMove)
         transform_layout.addWidget(self.transform_list)
         
-        #Apply Changes Button
+        # Apply Changes Button
         apply_all_button = QPushButton("Apply All Changes")
         apply_all_button.clicked.connect(self.apply_all_changes)
-
         transform_layout.addWidget(apply_all_button)
         transform_group.setLayout(transform_layout)
         scroll_layout.addWidget(transform_group)
@@ -152,7 +201,7 @@ class PreprocessingPageWidget(QWidget):
         scroll_layout.addWidget(raw_data_label)
         self.raw_data_figure = Figure()
         self.raw_data_canvas = FigureCanvas(self.raw_data_figure)
-        self.raw_data_canvas.setMinimumHeight(400)  # Custom height
+        self.raw_data_canvas.setMinimumHeight(400)
         scroll_layout.addWidget(self.raw_data_canvas)
 
         # Processed Data Preview
@@ -160,32 +209,110 @@ class PreprocessingPageWidget(QWidget):
         scroll_layout.addWidget(processed_data_label)
         self.processed_data_figure = Figure()
         self.processed_data_canvas = FigureCanvas(self.processed_data_figure)
-        self.processed_data_canvas.setMinimumHeight(400)  # Custom height
+        self.processed_data_canvas.setMinimumHeight(400)
         scroll_layout.addWidget(self.processed_data_canvas)
 
         # Set up scroll area
         scroll_area.setWidget(scroll_widget)
-        scroll_area.setWidgetResizable(True)    #Makes me able to scroll vertically
+        scroll_area.setWidgetResizable(True)
         main_layout.addWidget(scroll_area)
 
     def apply_filters(self):
-        """Add selected filters to the transformation list."""
+        """Add selected filters with their implementation type and roll-off to the transformation list."""
+        # Get the selected filter type
+        selected_filter = self.filter_button_group.checkedButton()
+        filter_type = selected_filter.text() if selected_filter else "None"
+
+        # Get roll-off if enabled
+        roll_off = None
+        if self.roll_off.isChecked():
+            try:
+                roll_off = float(self.roll_off_input.text())
+            except ValueError:
+                self.status_label.setText("Error: Invalid roll-off value")
+                return
+
+        # Define implementation parameters based on filter type
+        if filter_type == "Butterworth":
+            impl_params = {"method": "iir", "iir_params": {"ftype": "butter", "order": 4}}
+        elif filter_type == "Chebyshev I":
+            impl_params = {"method": "iir", "iir_params": {"ftype": "cheby1", "order": 4, "rp": 0.5}}
+        elif filter_type == "Chebyshev II":
+            impl_params = {"method": "iir", "iir_params": {"ftype": "cheby2", "order": 4, "rs": 40}}
+        elif filter_type == "Bessel":
+            impl_params = {"method": "iir", "iir_params": {"ftype": "bessel", "order": 4}}
+        elif filter_type == "Finite Impulse Response":
+            impl_params = {"method": "fir", "fir_window": "hamming"}
+        else:
+            impl_params = {"method": "iir", "iir_params": {"ftype": "butter", "order": 4}}  # Default
+            self.status_label.setText("No filter type selected; using default (Butterworth)")
+
+        # Add enabled filters to the pipeline
         if self.highpass_cb.isChecked():
-            cutoff = self.highpass_input.text()
-            item = QListWidgetItem(f"High-pass Filter: {cutoff} Hz")
-            item.setData(Qt.UserRole, {"type": "highpass", "params": {"cutoff": float(cutoff)}})
-            self.transform_list.addItem(item)
+            try:
+                cutoff = float(self.highpass_input.text())
+                params = {"l_freq": cutoff, "h_freq": None, **impl_params}
+                if roll_off is not None:
+                    params["roll_off"] = roll_off
+                item_text = f"High-pass Filter ({filter_type}): {cutoff} Hz"
+                if roll_off is not None:
+                    item_text += f", Roll-off: {roll_off} dB/oct"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, {"type": "filter", "params": params})
+                self.transform_list.addItem(item)
+            except ValueError:
+                self.status_label.setText("Error: Invalid high-pass cutoff")
+                return
+
+        if self.lowpass_cb.isChecked():
+            try:
+                cutoff = float(self.lowpass_input.text())
+                params = {"l_freq": None, "h_freq": cutoff, **impl_params}
+                if roll_off is not None:
+                    params["roll_off"] = roll_off
+                item_text = f"Low-pass Filter ({filter_type}): {cutoff} Hz"
+                if roll_off is not None:
+                    item_text += f", Roll-off: {roll_off} dB/oct"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, {"type": "filter", "params": params})
+                self.transform_list.addItem(item)
+            except ValueError:
+                self.status_label.setText("Error: Invalid low-pass cutoff")
+                return
+
         if self.bandpass_cb.isChecked():
-            low = self.bandpass_low.text()
-            high = self.bandpass_high.text()
-            item = QListWidgetItem(f"Band-pass Filter: {low}-{high} Hz")
-            item.setData(Qt.UserRole, {"type": "bandpass", "params": {"low": float(low), "high": float(high)}})
-            self.transform_list.addItem(item)
+            try:
+                low = float(self.bandpass_low.text())
+                high = float(self.bandpass_high.text())
+                params = {"l_freq": low, "h_freq": high, **impl_params}
+                if roll_off is not None:
+                    params["roll_off"] = roll_off
+                item_text = f"Band-pass Filter ({filter_type}): {low}-{high} Hz"
+                if roll_off is not None:
+                    item_text += f", Roll-off: {roll_off} dB/oct"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, {"type": "filter", "params": params})
+                self.transform_list.addItem(item)
+            except ValueError:
+                self.status_label.setText("Error: Invalid band-pass frequencies")
+                return
+
         if self.notch_cb.isChecked():
-            freq = self.notch_freq.currentText().split()[0]
-            item = QListWidgetItem(f"Notch Filter: {freq} Hz")
-            item.setData(Qt.UserRole, {"type": "notch", "params": {"freq": float(freq)}})
-            self.transform_list.addItem(item)
+            try:
+                freq = float(self.notch_freq.currentText().split()[0])
+                params = {"freqs": [freq], **impl_params}
+                if roll_off is not None:
+                    params["roll_off"] = roll_off
+                item_text = f"Notch Filter ({filter_type}): {freq} Hz"
+                if roll_off is not None:
+                    item_text += f", Roll-off: {roll_off} dB/oct"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, {"type": "notch", "params": params})
+                self.transform_list.addItem(item)
+            except ValueError:
+                self.status_label.setText("Error: Invalid notch frequency")
+                return
+
         self.status_label.setText("Filters added to pipeline")
 
     def run_ica(self):
@@ -195,32 +322,39 @@ class PreprocessingPageWidget(QWidget):
 
     def apply_artifact_removal(self):
         """Add selected artifact removal methods to the transformation list."""
-        if self.ica_cb.isChecked():
-            item = QListWidgetItem("ICA")
-            item.setData(Qt.UserRole, {"type": "ica", "params": {}})
-            self.transform_list.addItem(item)
-        if self.asr_cb.isChecked():
-            threshold = self.asr_threshold.text()
-            remove = self.asr_remove.isChecked()
-            item = QListWidgetItem(f"ASR: threshold={threshold}, remove={remove}")
-            item.setData(Qt.UserRole, {"type": "asr", "params": {"threshold": float(threshold), "remove": remove}})
-            self.transform_list.addItem(item)
-        self.status_label.setText("Artifact removal methods added to pipeline")
+        try:
+            if self.ica_cb.isChecked():
+                item = QListWidgetItem("ICA")
+                item.setData(Qt.UserRole, {"type": "ica", "params": {}})
+                self.transform_list.addItem(item)
+            if self.asr_cb.isChecked():
+                threshold = float(self.asr_threshold.text())
+                remove = self.asr_remove.isChecked()
+                item = QListWidgetItem(f"ASR: threshold={threshold}, remove={remove}")
+                item.setData(Qt.UserRole, {"type": "asr", "params": {"threshold": threshold, "remove": remove}})
+                self.transform_list.addItem(item)
+            self.status_label.setText("Artifact removal methods added to pipeline")
+        except ValueError:
+            self.status_label.setText("Error: Invalid ASR threshold")
 
     def apply_signal_enhancement(self):
         """Add selected signal enhancement methods to the transformation list."""
-        if self.reref_cb.isChecked():
-            ref_type = self.reref_type.currentText()
-            item = QListWidgetItem(f"Re-reference: {ref_type}")
-            item.setData(Qt.UserRole, {"type": "reref", "params": {"ref_type": ref_type}})
-            self.transform_list.addItem(item)
-        if self.resample_cb.isChecked():
-            rate = self.resample_rate.text()
-            item = QListWidgetItem(f"Resample: {rate} Hz")
-            item.setData(Qt.UserRole, {"type": "resample", "params": {"rate": float(rate)}})
-            self.transform_list.addItem(item)
-        self.status_label.setText("Signal enhancement methods added to pipeline")
+        try:
+            if self.reref_cb.isChecked():
+                ref_type = self.reref_type.currentText()
+                item = QListWidgetItem(f"Re-reference: {ref_type}")
+                item.setData(Qt.UserRole, {"type": "reref", "params": {"ref_type": ref_type}})
+                self.transform_list.addItem(item)
+            if self.resample_cb.isChecked():
+                rate = float(self.resample_rate.text())
+                item = QListWidgetItem(f"Resample: {rate} Hz")
+                item.setData(Qt.UserRole, {"type": "resample", "params": {"rate": rate}})
+                self.transform_list.addItem(item)
+            self.status_label.setText("Signal enhancement methods added to pipeline")
+        except ValueError:
+            self.status_label.setText("Error: Invalid resampling rate")
 
+    #This function just transfers data from self.transformation_list to an empty list
     def apply_all_changes(self):
         """Emit the list of selected transformations in the specified order."""
         transformations = []
@@ -231,31 +365,50 @@ class PreprocessingPageWidget(QWidget):
         self.preprocessRequested.emit(transformations)
         self.status_label.setText("All changes applied")
 
-    #Pre-processing Page Functions
+    #This will be responsible for calling the correct backend functions (based on dictionary specifications)
     def on_preprocess(self, action, params):
-            # Placeholder for preprocessing logic
-            # Integrate with mne for actual processing
-        if action == "filter":
-            if params["highpass"]:
-                    # Example: raw.filter(l_freq=params["highpass"], h_freq=None)
+        """Placeholder for preprocessing logic, integrating with MNE."""
+        try:
+            if action == "filter":
+                # Calculate order based on roll-off if provided
+                if "roll_off" in params:
+                    # Example: Adjust order based on roll-off (simplified)
+                    # For IIR filters, roll-off is ~6 dB/octave per order
+                    order = params.get("iir_params", {}).get("order", 4)
+                    if params["roll_off"] > 0:
+                        order = max(1, int(params["roll_off"] / 6))  # Approximate
+                        params["iir_params"]["order"] = order
+                    elif params["method"] == "fir":
+                        # For FIR, roll-off affects window length (simplified)
+                        params["fir_length"] = max(101, int(params["roll_off"] * 10))  # Example scaling
+                # Example: raw.filter(l_freq=params["l_freq"], h_freq=params["h_freq"], 
+                #                     method=params["method"], iir_params=params.get("iir_params"), 
+                #                     fir_window=params.get("fir_window"), fir_length=params.get("fir_length"))
                 pass
-            if params["bandpass_low"] and params["bandpass_high"]:
-                    # Example: raw.filter(l_freq=params["bandpass_low"], h_freq=params["bandpass_high"])
+            elif action == "notch":
+                if "roll_off" in params:
+                    # Similar adjustment for notch filter
+                    order = params.get("iir_params", {}).get("order", 4)
+                    if params["roll_off"] > 0:
+                        order = max(1, int(params["roll_off"] / 6))
+                        params["iir_params"]["order"] = order
+                    elif params["method"] == "fir":
+                        params["fir_length"] = max(101, int(params["roll_off"] * 10))
+                # Example: raw.notch_filter(freqs=params["freqs"], method=params["method"], 
+                #                           iir_params=params.get("iir_params"), 
+                #                           fir_window=params.get("fir_window"), fir_length=params.get("fir_length"))
                 pass
-            if params["notch"]:
-                    # Example: raw.notch_filter(freqs=[params["notch"]])
-                pass
-        elif action == "ica":
+            elif action == "ica":
                 # Example: ica = mne.preprocessing.ICA().fit(raw)
-            pass
-        elif action == "artifact_removal":
+                pass
+            elif action == "asr":
                 # Example: Implement ASR using mne.preprocessing
-            pass
-        elif action == "signal_enhancement":
-            if params["reref_type"]:
-                    # Example: raw.set_eeg_reference(params["reref_type"])
                 pass
-            if params["resample_rate"]:
-                    # Example: raw.resample(params["resample_rate"])
+            elif action == "reref":
+                # Example: raw.set_eeg_reference(params["ref_type"])
                 pass
-        ### Create conditional for when the action is to apply transformations
+            elif action == "resample":
+                # Example: raw.resample(params["rate"])
+                pass
+        except Exception as e:
+            self.status_label.setText(f"Error in preprocessing: {str(e)}")

@@ -1,7 +1,7 @@
 import os
 import json
 import shutil
-#import uuid    #Dont really need but not dleting just yet...
+#import uuid    #Dont really need but not deleting just yet...
 from datetime import datetime
 
 class ProjectManager:

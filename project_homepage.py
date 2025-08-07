@@ -8,7 +8,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvas
 from homepage_widget import HomePageWidget
 from datapage_widget import DataPageWidget
 from preprocessingpage_widget import PreprocessingPageWidget
-from mldeeplearningpage_widget import MLDeepLearningPageWidget
+from mlpage_widget import MLPageWidget
 from visualization_widget import VisualizationPageWidget
 
 class MainWindow(QMainWindow):
@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self.preprocessing_page.preprocessRequested.connect(self.preprocessing_page.on_preprocess)
 
         #Add Ml/Deep Learning Tab
-        self.ml_deeplearning_page = MLDeepLearningPageWidget()
+        self.ml_deeplearning_page = MLPageWidget()
         self.tabs.addTab(self.ml_deeplearning_page, "ML/Deep Learning")
 
         #Add Visualization Tab
