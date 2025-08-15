@@ -6,12 +6,16 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 from matplotlib.figure import Figure
+from ICA_widget import IcaWidget
+import mne
+import numpy as np
 
 class PreprocessingPageWidget(QWidget):
-    preprocessRequested = pyqtSignal(list)  # Signal now emits a list of transformation dictionaries
+    preprocessRequested = pyqtSignal(list)  # Signal emits a list of transformation dictionaries
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.raw = None  # To store MNE Raw object
         
         # Main layout with scroll area
         main_layout = QVBoxLayout(self)
@@ -22,8 +26,6 @@ class PreprocessingPageWidget(QWidget):
         # Filtering section
         filter_group = QGroupBox("Filtering Options")
         filter_layout = QVBoxLayout()
-
-        # Offering the mainly used types of filters
         self.signal_filter_label = QLabel("Select specific filtering method:")
         filter_layout.addWidget(self.signal_filter_label)
 
@@ -43,14 +45,12 @@ class PreprocessingPageWidget(QWidget):
         self.filter_button_group.addButton(self.none_option)
 
         self.specific_filter_layout = QHBoxLayout()
-
         self.specific_filter_layout.addWidget(self.butterworth_option)
         self.specific_filter_layout.addWidget(self.chebyshev_one_option)
         self.specific_filter_layout.addWidget(self.chebyshev_two_option)
         self.specific_filter_layout.addWidget(self.bessel_option)
         self.specific_filter_layout.addWidget(self.fir_option)
         self.specific_filter_layout.addWidget(self.none_option)
-
         filter_layout.addLayout(self.specific_filter_layout)
 
         filter_label = QLabel("Select filters to apply:")
@@ -121,8 +121,12 @@ class PreprocessingPageWidget(QWidget):
         self.ica_cb = QCheckBox("Enable ICA")
         self.ica_button = QPushButton("Run ICA and Show Components")
         self.ica_button.clicked.connect(self.run_ica)
+        self.n_components_combo = QComboBox()
+        self.n_components_combo.addItems(["10", "20", "All Channels"])
         ica_hbox = QHBoxLayout()
         ica_hbox.addWidget(self.ica_cb)
+        ica_hbox.addWidget(QLabel("Components:"))
+        ica_hbox.addWidget(self.n_components_combo)
         ica_hbox.addWidget(self.ica_button)
         artifact_layout.addLayout(ica_hbox)
 
@@ -139,7 +143,6 @@ class PreprocessingPageWidget(QWidget):
 
         apply_artifact_button = QPushButton("Add Artifact Removal to Pipeline")
         apply_artifact_button.clicked.connect(self.apply_artifact_removal)
-        artifact_layout.addWidget(apply_artifact_button)
         artifact_group.setLayout(artifact_layout)
         scroll_layout.addWidget(artifact_group)
 
@@ -184,12 +187,10 @@ class PreprocessingPageWidget(QWidget):
         transform_label = QLabel("Selected Transformations (drag to reorder):")
         transform_layout.addWidget(transform_label)
 
-        # List Options
         self.transform_list = QListWidget()
         self.transform_list.setDragDropMode(QListWidget.InternalMove)
         transform_layout.addWidget(self.transform_list)
         
-        # Apply Changes Button
         apply_all_button = QPushButton("Apply All Changes")
         apply_all_button.clicked.connect(self.apply_all_changes)
         transform_layout.addWidget(apply_all_button)
@@ -217,13 +218,35 @@ class PreprocessingPageWidget(QWidget):
         scroll_area.setWidgetResizable(True)
         main_layout.addWidget(scroll_area)
 
+    def set_raw_data(self, raw):
+        """Set the MNE Raw object from DataPageWidget."""
+        self.raw = raw
+        if self.raw is not None:
+            self.status_label.setText(f"Loaded data with {len(self.raw.ch_names)} channels")
+            self.plot_raw_data()
+
+    def plot_raw_data(self):
+        """Plot raw EEG data on the raw data canvas."""
+        if self.raw is None:
+            return
+        self.raw_data_figure.clear()
+        ax = self.raw_data_figure.add_subplot(111)
+        data, times = self.raw[:, :1000]  # Plot first 1000 samples for preview
+        for i, ch_data in enumerate(data):
+            ax.plot(times, ch_data + i * np.ptp(ch_data) * 1.5, label=self.raw.ch_names[i])
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Amplitude (uV)')
+        ax.set_title('Raw EEG Data')
+        ax.legend(loc='upper right')
+        ax.grid(True)
+        self.raw_data_figure.tight_layout()
+        self.raw_data_canvas.draw()
+
     def apply_filters(self):
         """Add selected filters with their implementation type and roll-off to the transformation list."""
-        # Get the selected filter type
         selected_filter = self.filter_button_group.checkedButton()
         filter_type = selected_filter.text() if selected_filter else "None"
 
-        # Get roll-off if enabled
         roll_off = None
         if self.roll_off.isChecked():
             try:
@@ -232,7 +255,6 @@ class PreprocessingPageWidget(QWidget):
                 self.status_label.setText("Error: Invalid roll-off value")
                 return
 
-        # Define implementation parameters based on filter type
         if filter_type == "Butterworth":
             impl_params = {"method": "iir", "iir_params": {"ftype": "butter", "order": 4}}
         elif filter_type == "Chebyshev I":
@@ -244,10 +266,9 @@ class PreprocessingPageWidget(QWidget):
         elif filter_type == "Finite Impulse Response":
             impl_params = {"method": "fir", "fir_window": "hamming"}
         else:
-            impl_params = {"method": "iir", "iir_params": {"ftype": "butter", "order": 4}}  # Default
+            impl_params = {"method": "iir", "iir_params": {"ftype": "butter", "order": 4}}
             self.status_label.setText("No filter type selected; using default (Butterworth)")
 
-        # Add enabled filters to the pipeline
         if self.highpass_cb.isChecked():
             try:
                 cutoff = float(self.highpass_input.text())
@@ -316,17 +337,33 @@ class PreprocessingPageWidget(QWidget):
         self.status_label.setText("Filters added to pipeline")
 
     def run_ica(self):
-        """Run ICA and show components (kept separate for now)."""
-        self.preprocessRequested.emit([{"type": "ica", "params": {}}])
-        self.status_label.setText("ICA components computed")
+        """Run ICA and show components using IcaWidget."""
+        if self.raw is None:
+            self.status_label.setText("No EEG data loaded")
+            return
+
+        n_components = self.n_components_combo.currentText()
+        n_channels = len(self.raw.ch_names)
+        if n_components == "All Channels":
+            n_components = n_channels
+        else:
+            n_components = min(int(n_components), n_channels)
+
+        self.ica_widget = IcaWidget(raw=self.raw, num_channels=n_components, parent=self)
+        self.ica_widget.icaComponentsSelected.connect(self.handle_ica_components)
+        self.ica_widget.show()
+
+    def handle_ica_components(self, selected_components):
+        """Handle selected ICA components and add to pipeline."""
+        if self.ica_cb.isChecked():
+            item = QListWidgetItem(f"ICA: exclude components {selected_components}")
+            item.setData(Qt.UserRole, {"type": "ica", "params": {"exclude": selected_components, "n_components": self.n_components_combo.currentText()}})
+            self.transform_list.addItem(item)
+        self.status_label.setText(f"ICA components {selected_components} added to pipeline")
 
     def apply_artifact_removal(self):
         """Add selected artifact removal methods to the transformation list."""
         try:
-            if self.ica_cb.isChecked():
-                item = QListWidgetItem("ICA")
-                item.setData(Qt.UserRole, {"type": "ica", "params": {}})
-                self.transform_list.addItem(item)
             if self.asr_cb.isChecked():
                 threshold = float(self.asr_threshold.text())
                 remove = self.asr_remove.isChecked()
@@ -354,7 +391,6 @@ class PreprocessingPageWidget(QWidget):
         except ValueError:
             self.status_label.setText("Error: Invalid resampling rate")
 
-    #This function just transfers data from self.transformation_list to an empty list
     def apply_all_changes(self):
         """Emit the list of selected transformations in the specified order."""
         transformations = []
@@ -365,50 +401,60 @@ class PreprocessingPageWidget(QWidget):
         self.preprocessRequested.emit(transformations)
         self.status_label.setText("All changes applied")
 
-    #This will be responsible for calling the correct backend functions (based on dictionary specifications)
     def on_preprocess(self, action, params):
         """Placeholder for preprocessing logic, integrating with MNE."""
         try:
             if action == "filter":
-                # Calculate order based on roll-off if provided
                 if "roll_off" in params:
-                    # Example: Adjust order based on roll-off (simplified)
-                    # For IIR filters, roll-off is ~6 dB/octave per order
-                    order = params.get("iir_params", {}).get("order", 4)
-                    if params["roll_off"] > 0:
-                        order = max(1, int(params["roll_off"] / 6))  # Approximate
-                        params["iir_params"]["order"] = order
-                    elif params["method"] == "fir":
-                        # For FIR, roll-off affects window length (simplified)
-                        params["fir_length"] = max(101, int(params["roll_off"] * 10))  # Example scaling
-                # Example: raw.filter(l_freq=params["l_freq"], h_freq=params["h_freq"], 
-                #                     method=params["method"], iir_params=params.get("iir_params"), 
-                #                     fir_window=params.get("fir_window"), fir_length=params.get("fir_length"))
-                pass
-            elif action == "notch":
-                if "roll_off" in params:
-                    # Similar adjustment for notch filter
                     order = params.get("iir_params", {}).get("order", 4)
                     if params["roll_off"] > 0:
                         order = max(1, int(params["roll_off"] / 6))
                         params["iir_params"]["order"] = order
                     elif params["method"] == "fir":
                         params["fir_length"] = max(101, int(params["roll_off"] * 10))
-                # Example: raw.notch_filter(freqs=params["freqs"], method=params["method"], 
-                #                           iir_params=params.get("iir_params"), 
-                #                           fir_window=params.get("fir_window"), fir_length=params.get("fir_length"))
+                # Example: self.raw.filter(l_freq=params["l_freq"], h_freq=params["h_freq"], ...)
+                pass
+            elif action == "notch":
+                if "roll_off" in params:
+                    order = params.get("iir_params", {}).get("order", 4)
+                    if params["roll_off"] > 0:
+                        order = max(1, int(params["roll_off"] / 6))
+                        params["iir_params"]["order"] = order
+                    elif params["method"] == "fir":
+                        params["fir_length"] = max(101, int(params["roll_off"] * 10))
+                # Example: self.raw.notch_filter(freqs=params["freqs"], ...)
                 pass
             elif action == "ica":
-                # Example: ica = mne.preprocessing.ICA().fit(raw)
-                pass
+                if "exclude" in params:
+                    # Example: ica = mne.preprocessing.ICA(n_components=params.get("n_components")).fit(self.raw)
+                    # ica.apply(self.raw, exclude=params["exclude"])
+                    pass
             elif action == "asr":
                 # Example: Implement ASR using mne.preprocessing
                 pass
             elif action == "reref":
-                # Example: raw.set_eeg_reference(params["ref_type"])
+                # Example: self.raw.set_eeg_reference(params["ref_type"])
                 pass
             elif action == "resample":
-                # Example: raw.resample(params["rate"])
+                # Example: self.raw.resample(params["rate"])
                 pass
+            self.plot_processed_data()
         except Exception as e:
             self.status_label.setText(f"Error in preprocessing: {str(e)}")
+
+    def plot_processed_data(self):
+        """Plot processed EEG data on the processed data canvas."""
+        if self.raw is None:
+            return
+        self.processed_data_figure.clear()
+        ax = self.processed_data_figure.add_subplot(111)
+        data, times = self.raw[:, :1000]  # Plot first 1000 samples for preview
+        for i, ch_data in enumerate(data):
+            ax.plot(times, ch_data + i * np.ptp(ch_data) * 1.5, label=self.raw.ch_names[i])
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Amplitude (uV)')
+        ax.set_title('Processed EEG Data')
+        ax.legend(loc='upper right')
+        ax.grid(True)
+        self.processed_data_figure.tight_layout()
+        self.processed_data_canvas.draw()

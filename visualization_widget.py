@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 from matplotlib.figure import Figure
+import pyqtgraph.opengl as gl   #Added for 3D rendering
 
 class VisualizationPageWidget(QWidget):
     plotRequested = pyqtSignal(str, dict)  # Signal for plot requests (type, parameters)
@@ -143,7 +144,21 @@ class VisualizationPageWidget(QWidget):
         widget = QWidget()
         layout = QVBoxLayout()
 
-        # Real-time plot canvas
+        # 3D Brain Model
+        self.brain_view = gl.GLViewWidget()  # Create a 3D view widget
+        self.brain_view.setCameraPosition(distance=200)  # Set initial camera distance
+        layout.addWidget(self.brain_view)
+
+        # Load a placeholder brain model (e.g., a sphere)
+        # Replace this with an actual brain model (STL/OBJ) later
+        brain_model = gl.GLMeshItem(
+            meshdata=gl.MeshData.sphere(rows=10, cols=20),
+            color=(0.5, 0.5, 0.5, 1)  # Gray color with full opacity
+        )
+        self.brain_view.addItem(brain_model)  # Add the model to the view
+        self.brain_model = brain_model  # Store reference for updates
+
+        # Real-time plot canvas (optional, keep if you still want 2D plots)
         self.real_time_figure = Figure()
         self.real_time_canvas = FigureCanvas(self.real_time_figure)
         self.real_time_canvas.setMinimumHeight(400)

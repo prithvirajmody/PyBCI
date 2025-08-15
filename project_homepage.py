@@ -10,13 +10,15 @@ from datapage_widget import DataPageWidget
 from preprocessingpage_widget import PreprocessingPageWidget
 from mlpage_widget import MLPageWidget
 from visualization_widget import VisualizationPageWidget
+from Backend.data_backend import get_project_info, enumerate_progress
 
-class MainWindow(QMainWindow):
-    def __init__(self, project_name="Test", progress=3):    #These parameters will be passed from the menu-page (currently main.py)
+class ProjectWindow(QMainWindow):
+    def __init__(self, project_filepath):    #These parameters will be passed from the menu-page (currently main.py)
         super().__init__()
-        self.project_name = project_name
-        self.progress = progress
-        self.setWindowTitle(f"Project: {project_name}")
+        project_data = get_project_info(project_filepath)
+        self.project_name = project_data['project_name']
+        self.progress = enumerate_progress(project_data)
+        self.setWindowTitle(f"Project: {self.project_name}")
         self.setGeometry(100, 100, 800, 600)
 
         # Create tab widget
@@ -24,7 +26,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
         # Add Home tab
-        self.home_page = HomePageWidget(project_name, progress) #Calls the class from homepage_widget.py
+        self.home_page = HomePageWidget(project_filepath) #Calls the class from homepage_widget.py
         self.tabs.addTab(self.home_page, "Home")
         self.home_page.saveRequested.connect(self.home_page.show_save_message)    #Connects the messagebox confirming progress was saved to the save button
 
@@ -60,8 +62,4 @@ class MainWindow(QMainWindow):
         widget.setLayout(layout)
         return widget
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow("Test Project", 3)
-    window.showMaximized()
-    sys.exit(app.exec_())
+
